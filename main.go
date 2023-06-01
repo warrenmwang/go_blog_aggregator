@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -42,6 +43,46 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 		log.Fatal(err)
 	}
 	w.Write(response)
+}
+
+// get JWT/APIKEY from the "Authorization" header
+// expects format - Authorization: Bearer <token> / Authorization: ApiKey <key>
+// where "Authorization" is the header name
+func getAuthTokenFromHeader(r *http.Request) (string, error) {
+	authHeader := r.Header.Get("Authorization")
+	splitAuthHeader := strings.Split(authHeader, " ")
+	if len(splitAuthHeader) != 2 {
+		return "", errors.New("no token provided")
+	}
+	tokenString := splitAuthHeader[1]
+	return tokenString, nil
+}
+
+type authedHandler func(http.ResponseWriter, *http.Request, database.User)
+
+// gets a user only if authenticated, that is there is a valid apikey for the user present
+// in the Authorization header
+// returns that authenticated user
+func (cfg *apiConfig) middlewareAuth(handler authedHandler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// get apikey from header
+		apikey, err := getAuthTokenFromHeader(r)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err)
+			log.Println(err)
+			return
+		}
+
+		// get user
+		user, err := cfg.DB.GetUser(context.Background(), apikey)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err)
+			log.Println(err)
+			return
+		}
+
+		handler(w, r, user)
+	}
 }
 
 // GET /v1/readiness
@@ -113,7 +154,7 @@ func (apiCfg apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request
 		Created_at: databaseUser.CreatedAt.Format(time.RFC3339),
 		Updated_at: databaseUser.UpdatedAt.Format(time.RFC3339),
 		Name:       databaseUser.Name,
-		Api_key: databaseUser.ApiKey
+		Api_key:    databaseUser.ApiKey,
 	}
 
 	// respond with the newly created user's info
@@ -122,8 +163,61 @@ func (apiCfg apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request
 
 // GET /v1/users/
 // needs Authorization: ApiKey <key>
-func (apiCfg apiConfig) getUserHandler(w http.ResponseWriter, r *http.Request) {
+// get a user by their apikey
+func (apiCfg apiConfig) getUserHandler(w http.ResponseWriter, r *http.Request, user database.User) {
+	respondWithJSON(w, http.StatusOK, user)
+}
 
+// POST /v1/feeds
+// create a new feed
+func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request, user database.User) {
+	type parameters struct {
+		Name string `json:"name"`
+		Url  string `json:"url"`
+	}
+
+	// decode the user from JSON into go struct
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, errors.New("decoding json went wrong"))
+		return
+	}
+
+	// generate new feed's uuid
+	uuid, err := uuid.NewRandom()
+	if err != nil {
+		log.Fatalf("Error generating UUID: %v\n", err)
+		return
+	}
+
+	// create the new Feed
+	newFeed := database.CreateFeedParams{
+		ID:        uuid,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      params.Name,
+		Url:       params.Url,
+		UserID:    user.ID,
+	}
+
+	// put the feed in the db
+	createdFeed, err := apiCfg.DB.CreateFeed(context.Background(), newFeed)
+	if err != nil {
+		// if err is a duplicate url, just respond with ok
+		if err.Error() == "pq: duplicate key value violates unique constraint \"feeds_url_key\"" {
+			respondWithJSON(w, http.StatusOK, nil)
+			log.Println("duplicate url, respond with just ok")
+			return
+		}
+		// otherwise an actual error
+		respondWithError(w, http.StatusInternalServerError, err)
+		log.Println(err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, createdFeed)
 }
 
 func main() {
@@ -149,13 +243,15 @@ func main() {
 	v1Router.Get("/readiness", readinessHandler)
 	v1Router.Get("/err", errorHandler)
 
-	v1Router.Post("/users", apiCfg.createUserHandler) // create a new user
-	v1Router.Get("/users", apiCfg.getUserHandler)     // get a user using apikey
+	v1Router.Post("/users", apiCfg.createUserHandler)                    // create a new user
+	v1Router.Get("/users", apiCfg.middlewareAuth(apiCfg.getUserHandler)) // get a user using apikey
 
+	v1Router.Post("/feeds", apiCfg.middlewareAuth(apiCfg.createFeedHandler)) // create a new feed for the authed user
+
+	log.Println("launching server")
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%v", port),
 		Handler: router,
 	}
 	srv.ListenAndServe()
-
 }
