@@ -32,6 +32,7 @@ type apiConfig struct {
 // wrapper for respondWithJSON for sending errors as the interface used to be converted to json
 func respondWithError(w http.ResponseWriter, code int, err error) {
 	respondWithJSON(w, code, errorBody{Error: err.Error()})
+	log.Println("responded with err:", err.Error())
 }
 
 // handles http requests and return json
@@ -125,6 +126,12 @@ func (apiCfg apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// make sure name isn't empty
+	if len(params.Name) == 0 {
+		respondWithError(w, http.StatusUnauthorized, errors.New("name cannot be empty"))
+		return
+	}
+
 	// generate new user's uuid
 	uuid, err := uuid.NewRandom()
 	if err != nil {
@@ -169,11 +176,16 @@ func (apiCfg apiConfig) getUserHandler(w http.ResponseWriter, r *http.Request, u
 }
 
 // POST /v1/feeds
-// create a new feed
+// needs Authorization: ApiKey <key>
+// create a new feed and by default a new feed follow to this feed as well
 func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request, user database.User) {
 	type parameters struct {
 		Name string `json:"name"`
 		Url  string `json:"url"`
+	}
+	type returnVal struct {
+		Feed        database.Feed       `json:"feed"`
+		Feed_follow database.FeedFollow `json:"feed_follow"`
 	}
 
 	// decode the user from JSON into go struct
@@ -185,18 +197,26 @@ func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// make sure name and url are not empty
+	if len(params.Name) == 0 || len(params.Url) == 0 {
+		respondWithError(w, http.StatusUnauthorized, errors.New("name and url cannot be empty"))
+		return
+	}
+
 	// generate new feed's uuid
-	uuid, err := uuid.NewRandom()
+	newFeedUUID, err := uuid.NewRandom()
 	if err != nil {
 		log.Fatalf("Error generating UUID: %v\n", err)
 		return
 	}
 
+	currTime := time.Now()
+
 	// create the new Feed
 	newFeed := database.CreateFeedParams{
-		ID:        uuid,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:        newFeedUUID,
+		CreatedAt: currTime,
+		UpdatedAt: currTime,
 		Name:      params.Name,
 		Url:       params.Url,
 		UserID:    user.ID,
@@ -213,11 +233,131 @@ func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request
 		}
 		// otherwise an actual error
 		respondWithError(w, http.StatusInternalServerError, err)
-		log.Println(err)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, createdFeed)
+	// generate new feed_follow's uuid
+	newFeedFollowUUID, err := uuid.NewRandom()
+	if err != nil {
+		log.Fatalf("Error generating UUID: %v\n", err)
+		return
+	}
+
+	newFeedFollow := database.CreateFeedFollowParams{
+		ID:        newFeedFollowUUID,
+		FeedID:    newFeedUUID,
+		UserID:    user.ID,
+		CreatedAt: currTime,
+		UpdatedAt: currTime,
+	}
+
+	createdFeedFollow, err := apiCfg.DB.CreateFeedFollow(context.Background(), newFeedFollow)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, returnVal{
+		Feed:        createdFeed,
+		Feed_follow: createdFeedFollow,
+	})
+}
+
+// GET /v1/feeds
+// retrieve all feeds, don't need to be authed
+func (apiCfg apiConfig) getAllFeedsHandler(w http.ResponseWriter, r *http.Request) {
+	allFeeds, err := apiCfg.DB.GetFeeds(context.Background())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, allFeeds)
+}
+
+// POST /v1/feed_follows
+// authed
+// expects a feed_id
+func (apiCfg apiConfig) createFeedFollowHandler(w http.ResponseWriter, r *http.Request, user database.User) {
+	type parameters struct {
+		Feed_id string `json:"feed_id"`
+	}
+
+	// decode the user from JSON into go struct
+	decoder := json.NewDecoder(r.Body)
+	params := parameters{}
+	err := decoder.Decode(&params)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, errors.New("decoding json went wrong"))
+		return
+	}
+
+	// make sure feed_id is present
+	if len(params.Feed_id) == 0 {
+		respondWithError(w, http.StatusUnauthorized, errors.New("feed_id cannot be empty"))
+		return
+	}
+
+	// generate new feed_follow's uuid
+	newUUID, err := uuid.NewRandom()
+	if err != nil {
+		log.Fatalf("Error generating UUID: %v\n", err)
+		return
+	}
+
+	// get feed_id
+	parsedFeedId, err := uuid.Parse(params.Feed_id)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// create new feedfollow
+	currTime := time.Now()
+	newFeedFollow := database.CreateFeedFollowParams{
+		ID:        newUUID,
+		FeedID:    parsedFeedId,
+		UserID:    user.ID,
+		CreatedAt: currTime,
+		UpdatedAt: currTime,
+	}
+
+	// store in db
+	createdFeedFollow, err := apiCfg.DB.CreateFeedFollow(context.Background(), newFeedFollow)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, createdFeedFollow)
+}
+
+// GET /v1/feed_follows
+// authed
+// get all feed followers from the authed user
+func (apiCfg apiConfig) getFeedFollowsHandler(w http.ResponseWriter, r *http.Request, user database.User) {
+	feedFollowers, err := apiCfg.DB.GetFeedFollows(context.Background(), user.ID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, feedFollowers)
+}
+
+// DELETE /v1/feed_follows/{feedFollowID}
+// deletes the single feed follower specified by its id
+func (apiCfg apiConfig) deleteFeedFollowHandler(w http.ResponseWriter, r *http.Request) {
+	idFeedToDelete := chi.URLParam(r, "feedFollowID")
+	parsedFeedId, err := uuid.Parse(idFeedToDelete)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	err = apiCfg.DB.DeleteFeedFollow(context.Background(), parsedFeedId)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, nil)
 }
 
 func main() {
@@ -247,6 +387,11 @@ func main() {
 	v1Router.Get("/users", apiCfg.middlewareAuth(apiCfg.getUserHandler)) // get a user using apikey
 
 	v1Router.Post("/feeds", apiCfg.middlewareAuth(apiCfg.createFeedHandler)) // create a new feed for the authed user
+	v1Router.Get("/feeds", apiCfg.getAllFeedsHandler)                        // get all feeds
+
+	v1Router.Post("/feed_follows", apiCfg.middlewareAuth(apiCfg.createFeedFollowHandler)) // create a new feed follow for the authed user
+	v1Router.Get("/feed_follows", apiCfg.middlewareAuth(apiCfg.getFeedFollowsHandler))    // get all the feed follows for the authed user
+	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.deleteFeedFollowHandler)       // delete a feed follow
 
 	log.Println("launching server")
 	srv := http.Server{
