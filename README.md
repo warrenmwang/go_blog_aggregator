@@ -1,7 +1,6 @@
-# RSS blog feed aggregator
+# RSS/Atom/JSON blog feed aggregator
 
-
-`POST /v1/users` - create user
+## `POST /v1/users` - create user
 request
 ```json
 {
@@ -19,7 +18,7 @@ reply
 }
 ```
 
-`GET /v1/users/` - get a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+## `GET /v1/users/` - get a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 response
 ```json
 {
@@ -31,7 +30,7 @@ response
 }
 ```
 
-`POST /v1/feeds` - create a feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+## `POST /v1/feeds` - create a feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 request
 ```json
 {
@@ -62,7 +61,7 @@ response
 - if url already exists in the db, either from one of the current user's previous feeds or in another user's feed, will just respond with 200 and `null`
 - by default also creates a feedfollow that follows this feed
 
-`GET /v1/feeds` - get all feeds
+## `GET /v1/feeds` - get all feeds
 response
 ```json
 [
@@ -85,7 +84,7 @@ response
 ]
 ```
 
-`POST /v1/feed_follows` - create a feed_follow to a specific feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+## `POST /v1/feed_follows` - create a feed_follow to a specific feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 request
 ```json
 {
@@ -103,11 +102,12 @@ response
   }
 ```
 
-`DELETE /v1/feed_follows/{feedFollowID}` - delete a feed_follow by its id
+## `DELETE /v1/feed_follows/{feedFollowID}` - delete a feed_follow by its id
 - without a given ID, will return 405, or if left trailing `/` 404
 - with a valid feed_follow ID returns 200 and `null` body
 
-`GET /v1/feed_follows` - gets all the feed_follows of a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+## `GET /v1/feed_follows` - gets all the feed_follows of a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+
 ```json
 [
   {
@@ -121,6 +121,6 @@ response
 ```
 
 
-`GET /v1/readiness` - readiness endpoint, returns 200 if server on
+## `GET /v1/readiness` - readiness endpoint, returns 200 if server on
 
-`GET /v1/err` - return error code 500 if server on
+## `GET /v1/err` - return error code 500 if server on

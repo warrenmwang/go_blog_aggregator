@@ -14,6 +14,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
+	"github.com/mmcdole/gofeed"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/cors"
@@ -26,7 +27,8 @@ type errorBody struct {
 }
 
 type apiConfig struct {
-	DB *database.Queries
+	DB           *database.Queries
+	FetchedFeeds []interface{}
 }
 
 // wrapper for respondWithJSON for sending errors as the interface used to be converted to json
@@ -360,6 +362,63 @@ func (apiCfg apiConfig) deleteFeedFollowHandler(w http.ResponseWriter, r *http.R
 	respondWithJSON(w, http.StatusOK, nil)
 }
 
+// download the .xml file from the url
+// there exists 3 possible formats: RSS, Atom, JSON feed
+// for now, just do RSS
+func getRSSFromURL(url string) (interface{}, error) {
+	fp := gofeed.NewParser()
+	feed, err := fp.ParseURL(url)
+	if err != nil {
+		return nil, err
+	}
+	return feed, nil
+}
+
+// continuously pull things from the feed urls
+// delay is in seconds
+func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
+	go func(delay int, fetchBatchSize int32) {
+		for {
+			log.Println("fetching new feeds...")
+			// get all feeds to be fetched
+			feedsToUpdate, err := apiCfg.DB.GetNextFeedsToFetch(context.Background(), fetchBatchSize)
+			if err != nil {
+				log.Println("feedFetcherWorker: ", err)
+				return
+			}
+
+			log.Printf("fetching %d feeds this round...\n", len(feedsToUpdate))
+
+			for _, feed := range feedsToUpdate {
+				// update the db that the feeds were got (updated_at, last_fetched_at)
+				currTime := time.Now()
+				apiCfg.DB.MarkFeedFetched(context.Background(), database.MarkFeedFetchedParams{
+					ID: feed.ID,
+					LastFetchedAt: sql.NullTime{
+						Time:  currTime,
+						Valid: true,
+					},
+					UpdatedAt: currTime,
+				})
+
+				// get rss
+				data, err := getRSSFromURL(feed.Url)
+				if err != nil {
+					log.Println("feedFetcherWorker: ", err)
+					return
+				}
+
+				// store them
+				apiCfg.FetchedFeeds = append(apiCfg.FetchedFeeds, data)
+			}
+
+			// log.Println(apiCfg.FetchedFeeds)
+
+			time.Sleep(time.Duration(delay) * time.Second)
+		}
+	}(delay, fetchBatchSize)
+}
+
 func main() {
 	godotenv.Load() // load .env
 	port := os.Getenv("PORT")
@@ -392,6 +451,9 @@ func main() {
 	v1Router.Post("/feed_follows", apiCfg.middlewareAuth(apiCfg.createFeedFollowHandler)) // create a new feed follow for the authed user
 	v1Router.Get("/feed_follows", apiCfg.middlewareAuth(apiCfg.getFeedFollowsHandler))    // get all the feed follows for the authed user
 	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.deleteFeedFollowHandler)       // delete a feed follow
+
+	// continuously fetch feeds
+	apiCfg.feedFetcherWorker(10, 10)
 
 	log.Println("launching server")
 	srv := http.Server{
