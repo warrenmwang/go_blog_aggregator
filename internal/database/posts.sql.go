@@ -7,16 +7,15 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const createPost = `-- name: CreatePost :one
-INSERT INTO posts (id, created_at, updated_at, title, url, description, published_at, feed_id, user_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-RETURNING id, created_at, updated_at, title, url, description, published_at, feed_id, user_id
+INSERT INTO posts (id, created_at, updated_at, title, url, description, published_at, feed_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, created_at, updated_at, title, url, description, published_at, feed_id
 `
 
 type CreatePostParams struct {
@@ -25,10 +24,9 @@ type CreatePostParams struct {
 	UpdatedAt   time.Time
 	Title       string
 	Url         string
-	Description sql.NullString
+	Description string
 	PublishedAt time.Time
 	FeedID      uuid.UUID
-	UserID      uuid.UUID
 }
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
@@ -41,7 +39,6 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		arg.Description,
 		arg.PublishedAt,
 		arg.FeedID,
-		arg.UserID,
 	)
 	var i Post
 	err := row.Scan(
@@ -53,46 +50,46 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 		&i.Description,
 		&i.PublishedAt,
 		&i.FeedID,
-		&i.UserID,
 	)
 	return i, err
 }
 
 const getPostsByUser = `-- name: GetPostsByUser :many
-SELECT id, created_at, updated_at, title, url, description, published_at, feed_id, user_id FROM posts
-WHERE user_id = $1
-ORDER BY last_fetched_at
+WITH user_id_from_api_key AS (
+    SELECT id
+    FROM users
+    WHERE api_key = $1
+),
+user_feed_follows AS (
+    SELECT ff.feed_id
+    FROM feed_follows ff
+    JOIN user_id_from_api_key u ON ff.user_id = u.user_id
+)
+SELECT f.id
+FROM feeds f
+JOIN user_feed_follows uff ON f.feed_id = uff.feed_id
+ORDER BY f.last_fetched_at
 LIMIT $2
 `
 
 type GetPostsByUserParams struct {
-	UserID uuid.UUID
+	ApiKey string
 	Limit  int32
 }
 
-func (q *Queries) GetPostsByUser(ctx context.Context, arg GetPostsByUserParams) ([]Post, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsByUser, arg.UserID, arg.Limit)
+func (q *Queries) GetPostsByUser(ctx context.Context, arg GetPostsByUserParams) ([]uuid.UUID, error) {
+	rows, err := q.db.QueryContext(ctx, getPostsByUser, arg.ApiKey, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Post
+	var items []uuid.UUID
 	for rows.Next() {
-		var i Post
-		if err := rows.Scan(
-			&i.ID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Title,
-			&i.Url,
-			&i.Description,
-			&i.PublishedAt,
-			&i.FeedID,
-			&i.UserID,
-		); err != nil {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
 			return nil, err
 		}
-		items = append(items, i)
+		items = append(items, id)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

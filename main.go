@@ -26,9 +26,14 @@ type errorBody struct {
 	Error string `json:"error"`
 }
 
+type FeedTuple struct {
+	ID   uuid.UUID    // feed id
+	Feed *gofeed.Feed // the feed gotten from web
+}
+
 type apiConfig struct {
 	DB           *database.Queries
-	FetchedFeeds []interface{}
+	FetchedFeeds []FeedTuple
 }
 
 // wrapper for respondWithJSON for sending errors as the interface used to be converted to json
@@ -404,7 +409,7 @@ func (apiCfg apiConfig) deleteFeedFollowHandler(w http.ResponseWriter, r *http.R
 // download the .xml file from the url
 // there exists 3 possible formats: RSS, Atom, JSON feed
 // for now, just do RSS
-func getRSSFromURL(url string) (interface{}, error) {
+func getRSSFromURL(url string) (*gofeed.Feed, error) {
 	fp := gofeed.NewParser()
 	feed, err := fp.ParseURL(url)
 	if err != nil {
@@ -420,15 +425,19 @@ func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
 	go func(delay int, fetchBatchSize int32) {
 		for {
 			log.Println("fetching new feeds...")
-			// get all feeds to be fetched
+
+			// clear the list of feeds
+			apiCfg.FetchedFeeds = apiCfg.FetchedFeeds[:0]
+
+			// get all feeds to be fetched from db
 			feedsToUpdate, err := apiCfg.DB.GetNextFeedsToFetch(context.Background(), fetchBatchSize)
 			if err != nil {
 				log.Println("feedFetcherWorker: ", err)
 				return
 			}
-
 			log.Printf("fetching %d feeds this round...\n", len(feedsToUpdate))
 
+			// fetch all the feeds (making http requests)
 			for _, feed := range feedsToUpdate {
 				// update the db that the feeds were got (updated_at, last_fetched_at)
 				currTime := time.Now()
@@ -441,41 +450,85 @@ func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
 					UpdatedAt: currTime,
 				})
 
-				// get rss
+				// fetch new feed from web
 				data, err := getRSSFromURL(feed.Url)
 				if err != nil {
 					log.Println("feedFetcherWorker: ", err)
 					return
 				}
 
-				// store them
-				apiCfg.FetchedFeeds = append(apiCfg.FetchedFeeds, data)
+				// save the feeds
+				apiCfg.FetchedFeeds = append(apiCfg.FetchedFeeds, FeedTuple{
+					ID:   feed.ID,
+					Feed: data,
+				})
 			}
+			// create the posts
+			apiCfg.CreatePostsFromFetchedFeeds()
 
-			// log.Println(apiCfg.FetchedFeeds)
-
+			// wait before checking for more possible feeds to grab
 			time.Sleep(time.Duration(delay) * time.Second)
 		}
 	}(delay, fetchBatchSize)
 }
 
+// create posts from fetched feeds
+// run in a goroutine, make sure to lock the apiCfg.FetchedFeeds list before using
+func (apiCfg apiConfig) CreatePostsFromFetchedFeeds() {
+	// each blog's feed may contain many posts, each post gets its own row in the db
+	for _, feedTuple := range apiCfg.FetchedFeeds {
+		feed := feedTuple.Feed
+		feedId := feedTuple.ID
+		for _, item := range feed.Items {
+			newUUID, err := uuid.NewRandom()
+			if err != nil {
+				log.Fatal(err)
+			}
+			currTime := time.Now()
+
+			// create the post
+			_, err = apiCfg.DB.CreatePost(context.Background(), database.CreatePostParams{
+				ID:          newUUID,
+				CreatedAt:   currTime,
+				UpdatedAt:   currTime,
+				Title:       item.Title,
+				Url:         item.Link,
+				Description: item.Description,
+				PublishedAt: *item.PublishedParsed,
+				FeedID:      feedId,
+			})
+			if err != nil {
+				log.Fatal(err)
+			}
+
+		}
+	}
+}
+
+// create post construct from rss feed marshaled as JSON
+
 // get posts from user
 // func (apiCfg apiConfig)
 
 func main() {
+	// environment stuff
 	godotenv.Load() // load .env
 	port := os.Getenv("PORT")
 	dbURL := os.Getenv("DBURL")
+
+	// connect to db
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal("couldn't connect to db, error:", err)
 	}
 	dbQueries := database.New(db)
 
+	// apiConfig struct
 	apiCfg := apiConfig{
 		DB: dbQueries,
 	}
 
+	// router & endpoints
 	router := chi.NewRouter()
 	router.Use(cors.AllowAll().Handler)
 
@@ -495,9 +548,10 @@ func main() {
 	v1Router.Get("/feed_follows", apiCfg.middlewareAuth(apiCfg.getFeedFollowsHandler))    // get all the feed follows for the authed user
 	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.deleteFeedFollowHandler)       // delete a feed follow
 
-	// continuously fetch feeds
+	// worker to continuously fetch feeds
 	apiCfg.feedFetcherWorker(10, 10)
 
+	// start the server to listen
 	log.Println("launching server")
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%v", port),
