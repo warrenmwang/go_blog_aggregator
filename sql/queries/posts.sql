@@ -17,5 +17,5 @@ JOIN
 WHERE
     users.api_key = $1
 ORDER BY
-    posts.created_at ASC
+    posts.published_at DESC
 LIMIT $2;

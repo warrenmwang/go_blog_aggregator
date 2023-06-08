@@ -122,6 +122,7 @@ response
 
 ## `GET /v1/posts` - get all the posts for user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 Returns a list of all the posts from blogs whose feeds this user follows. If the user doesn't follow any feed, the response will be `null`.
+- Accepts an optional query parameter `limit` that modifies how many blog posts to return. The posts returned are ordered descending by their publication date.
 
 
 ## `GET /v1/readiness` - readiness endpoint, returns 200 if server on
