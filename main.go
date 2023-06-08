@@ -179,7 +179,8 @@ func (apiCfg apiConfig) getUserHandler(w http.ResponseWriter, r *http.Request, u
 
 // POST /v1/feeds
 // needs Authorization: ApiKey <key>
-// create a new feed and by default a new feed follow to this feed as well
+// create a new feed and by default a new feed_follow to this feed as well
+// even is url is duplicate, should create a new feed_follow
 func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request, user database.User) {
 	type parameters struct {
 		Name string `json:"name"`
@@ -227,42 +228,80 @@ func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request
 	// put the feed in the db
 	createdFeed, err := apiCfg.DB.CreateFeed(context.Background(), newFeed)
 	if err != nil {
-		// if err is a duplicate url, just respond with ok
+		// if err is a duplicate url, create a new feed follow
+		// create a new feed_follow that has the feedid of the existing feed with the same id in the db
 		if err.Error() == "pq: duplicate key value violates unique constraint \"feeds_url_key\"" {
-			respondWithJSON(w, http.StatusOK, nil)
-			log.Println("duplicate url, respond with just ok")
+			log.Println("duplicate url, create new feed_follow to existing feed, respond with just the feed_follow")
+
+			// find the feed that already exists whose url is the one that we have
+			allFeeds, err := apiCfg.DB.GetFeeds(context.Background())
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, err)
+				return
+			}
+
+			var existingFeedToFind database.Feed
+			for _, feed := range allFeeds {
+				if newFeed.Url == feed.Url {
+					existingFeedToFind = feed
+				}
+			}
+
+			newFeedFollowUUID, err := uuid.NewRandom()
+			if err != nil {
+				log.Fatalf("Error generating UUID: %v\n", err)
+				return
+			}
+			newFeedFollow := database.CreateFeedFollowParams{
+				ID:        newFeedFollowUUID,
+				FeedID:    existingFeedToFind.ID,
+				UserID:    user.ID,
+				CreatedAt: currTime,
+				UpdatedAt: currTime,
+			}
+
+			// save new feed_follow to db
+			createdFeedFollow, err := apiCfg.DB.CreateFeedFollow(context.Background(), newFeedFollow)
+			if err != nil {
+				respondWithError(w, http.StatusInternalServerError, err)
+				return
+			}
+			respondWithJSON(w, http.StatusOK, createdFeedFollow)
+		} else {
+			// an actual error
+			respondWithError(w, http.StatusInternalServerError, err)
+		}
+	} else {
+		// otherwise, this is a unique, new feed (url), next create a new feed_follow
+		// generate new feed_follow's uuid
+		newFeedFollowUUID, err := uuid.NewRandom()
+		if err != nil {
+			log.Fatalf("Error generating UUID: %v\n", err)
 			return
 		}
-		// otherwise an actual error
-		respondWithError(w, http.StatusInternalServerError, err)
-		return
-	}
 
-	// generate new feed_follow's uuid
-	newFeedFollowUUID, err := uuid.NewRandom()
-	if err != nil {
-		log.Fatalf("Error generating UUID: %v\n", err)
-		return
-	}
+		// create the new feed follow
+		newFeedFollow := database.CreateFeedFollowParams{
+			ID:        newFeedFollowUUID,
+			FeedID:    newFeedUUID,
+			UserID:    user.ID,
+			CreatedAt: currTime,
+			UpdatedAt: currTime,
+		}
 
-	newFeedFollow := database.CreateFeedFollowParams{
-		ID:        newFeedFollowUUID,
-		FeedID:    newFeedUUID,
-		UserID:    user.ID,
-		CreatedAt: currTime,
-		UpdatedAt: currTime,
-	}
+		// save new feed follow to db
+		createdFeedFollow, err := apiCfg.DB.CreateFeedFollow(context.Background(), newFeedFollow)
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, err)
+			return
+		}
 
-	createdFeedFollow, err := apiCfg.DB.CreateFeedFollow(context.Background(), newFeedFollow)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, err)
-		return
+		// respond with acknowledgement that we created both a new feed and a new feed follow
+		respondWithJSON(w, http.StatusOK, returnVal{
+			Feed:        createdFeed,
+			Feed_follow: createdFeedFollow,
+		})
 	}
-
-	respondWithJSON(w, http.StatusOK, returnVal{
-		Feed:        createdFeed,
-		Feed_follow: createdFeedFollow,
-	})
 }
 
 // GET /v1/feeds
@@ -374,6 +413,7 @@ func getRSSFromURL(url string) (interface{}, error) {
 	return feed, nil
 }
 
+// TODO: write the test for this, manual testing says seems like it works
 // continuously pull things from the feed urls
 // delay is in seconds
 func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
@@ -418,6 +458,9 @@ func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
 		}
 	}(delay, fetchBatchSize)
 }
+
+// get posts from user
+// func (apiCfg apiConfig)
 
 func main() {
 	godotenv.Load() // load .env
