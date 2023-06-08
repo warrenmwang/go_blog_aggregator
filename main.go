@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -505,10 +506,34 @@ func (apiCfg apiConfig) CreatePostsFromFetchedFeeds() {
 	}
 }
 
-// create post construct from rss feed marshaled as JSON
+// GET /v1/posts
+// get posts for the feeds that the user is subscribed to
+// authenticated endpoint (ofc)
+// default will return the last 50 posts
+func (apiCfg apiConfig) getUserPosts(w http.ResponseWriter, r *http.Request, user database.User) {
+	// optional limit for number of posts to return, get from url param
+	tmp := r.URL.Query().Get("limit")
+	if tmp == "" {
+		tmp = "50"
+	}
+	limit, err := strconv.Atoi(tmp)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+	}
 
-// get posts from user
-// func (apiCfg apiConfig)
+	// query for the posts
+	posts, err := apiCfg.DB.GetPostsByUser(context.Background(), database.GetPostsByUserParams{
+		ApiKey: user.ApiKey,
+		Limit:  int32(limit),
+	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	// return the posts
+	respondWithJSON(w, http.StatusOK, posts)
+}
 
 func main() {
 	// environment stuff
@@ -547,6 +572,8 @@ func main() {
 	v1Router.Post("/feed_follows", apiCfg.middlewareAuth(apiCfg.createFeedFollowHandler)) // create a new feed follow for the authed user
 	v1Router.Get("/feed_follows", apiCfg.middlewareAuth(apiCfg.getFeedFollowsHandler))    // get all the feed follows for the authed user
 	v1Router.Delete("/feed_follows/{feedFollowID}", apiCfg.deleteFeedFollowHandler)       // delete a feed follow
+
+	v1Router.Get("/posts", apiCfg.middlewareAuth(apiCfg.getUserPosts)) // get relevant posts for user
 
 	// worker to continuously fetch feeds
 	apiCfg.feedFetcherWorker(10, 10)
