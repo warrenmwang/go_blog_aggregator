@@ -272,7 +272,11 @@ func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request
 				respondWithError(w, http.StatusInternalServerError, err)
 				return
 			}
-			respondWithJSON(w, http.StatusOK, createdFeedFollow)
+			// respond with acknowledgement
+			respondWithJSON(w, http.StatusOK, returnVal{
+				Feed:        database.Feed{},
+				Feed_follow: createdFeedFollow,
+			})
 		} else {
 			// an actual error
 			respondWithError(w, http.StatusInternalServerError, err)
@@ -303,7 +307,7 @@ func (apiCfg apiConfig) createFeedHandler(w http.ResponseWriter, r *http.Request
 		}
 
 		// respond with acknowledgement that we created both a new feed and a new feed follow
-		respondWithJSON(w, http.StatusOK, returnVal{
+		respondWithJSON(w, http.StatusCreated, returnVal{
 			Feed:        createdFeed,
 			Feed_follow: createdFeedFollow,
 		})
@@ -419,7 +423,6 @@ func getRSSFromURL(url string) (*gofeed.Feed, error) {
 	return feed, nil
 }
 
-// TODO: write the test for this, manual testing says seems like it works
 // continuously pull things from the feed urls
 // delay is in seconds
 func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
@@ -434,7 +437,7 @@ func (apiCfg apiConfig) feedFetcherWorker(delay int, fetchBatchSize int32) {
 			feedsToUpdate, err := apiCfg.DB.GetNextFeedsToFetch(context.Background(), fetchBatchSize)
 			if err != nil {
 				log.Println("feedFetcherWorker: ", err)
-				return
+				feedsToUpdate = []database.Feed{}
 			}
 			log.Printf("fetching %d feeds this round...\n", len(feedsToUpdate))
 
@@ -499,9 +502,12 @@ func (apiCfg apiConfig) CreatePostsFromFetchedFeeds() {
 				FeedID:      feedId,
 			})
 			if err != nil {
-				log.Fatal(err)
+				// post with same url, we don't have a post updated at timestamp in rss feeds anyways
+				if err.Error() != "pq: duplicate key value violates unique constraint \"posts_url_key\"" {
+					// log fatal if not an error that we expected
+					log.Fatal(err)
+				}
 			}
-
 		}
 	}
 }

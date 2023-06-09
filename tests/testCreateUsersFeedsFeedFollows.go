@@ -166,10 +166,7 @@ func main() {
 		"get all feeds",                      // description string
 		"GET",                                // method string
 		fmt.Sprintf("%s/v1/feeds", baseAddr), // url string
-		NewFeed{
-			Name: "Geohot Blog",
-			Url:  "https://geohot.github.io/blog/feed.xml",
-		}, // request body interface{}
+		nil,                                  // request body interface{}
 		nil,
 		&[]Feed{}, // resp body *T
 		&[]Feed{}, // respStructToPrint interface{}
