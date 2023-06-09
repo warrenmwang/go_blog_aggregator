@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RSS Blog Aggregator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.21.1/axios.min.js"></script>
+</head>
+<body>
+    <h1>RSS/Atom Blog Feed Aggregator</h1>
+    <p>
+        Use this to be kept up to date with your favorite blogs! It will let you know if you have any new posts that you haven't read yet!
+        <br><br>
+        Usually you'll use it like this:<br>
+        1. Create an account <br>
+        2. Create some feeds (which blogs you want to follow) <br>
+        3. (optional) Check what blogs you're following by getting your feed follows. <br>
+        4. Get the posts from the blogs you follow! <br>
+        <br>
+        You'll need to use your apikey which is given to you at account creation time. DON'T LOSE IT.
+    </p>
+
+    <h1>Create an Account</h1>
+    <form id="createUserForm">
+        <label for="name">Name:</label>
+        <input type="text" id="name" name="name" required> 
+        <button type="submit">Create Account</button>
+    </form>
+    <div id="apiKeyResult"></div>
+
+    <h1>Create Feed</h1>
+    <form id="createFeedForm">
+        <label for="apiKey">API Key:</label>
+        <input type="text" id="apiKey" name="apiKey" required> <br>
+        <label for="feedName">Feed Name:</label>
+        <input type="text" id="feedName" name="feedName" required> <br>
+        <label for="feedUrl">Feed URL:</label>
+        <input type="text" id="feedUrl" name="feedUrl" required><br>
+        <button type="submit">Create Feed</button>
+    </form>
+    <div id="feedResult">
+        <textarea id="feedsTextArea" rows="20" cols="50" readonly></textarea>
+    </div>
+
+    <h1>Get Posts</h1>
+    <form id="getPostsForm">
+        <label for="getPostsApiKey">API Key:</label>
+        <input type="text" id="getPostsApiKey" name="getPostsApiKey" required> <br>
+        <label for="limit">Limit:</label>
+        <input type="number" id="limit" name="limit" min="1"> <br>
+        <button type="submit">Get Posts</button>
+    </form>
+    <div id="postsResult">
+        <textarea id="postsTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <h1>Get User</h1>
+    <form id="getUserForm">
+        <label for="getUserApiKey">API Key:</label>
+        <input type="text" id="getUserApiKey" name="getUserApiKey" required>
+        <button type="submit">Get User</button>
+    </form>
+    <div id="userResult">
+        <textarea id="userTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <h1>Create Feed Follow</h1>
+    <form id="createFeedFollowForm">
+        <label for="createFeedFollowApiKey">API Key:</label>
+        <input type="text" id="createFeedFollowApiKey" name="createFeedFollowApiKey" required> <br>
+        <label for="feedID">Feed ID:</label>
+        <input type="text" id="feedID" name="feedID" required> <br>
+        <button type="submit">Create Feed Follow</button>
+    </form>
+    <div id="feedFollowResult">
+        <textarea id="feedFollowTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <h1>Delete Feed Follow</h1>
+    <form id="deleteFeedFollowForm">
+        <label for="deleteFeedFollowID">Feed Follow ID:</label>
+        <input type="text" id="deleteFeedFollowID" name="deleteFeedFollowID" required>
+        <button type="submit">Delete Feed Follow</button>
+    </form>
+    <div id="deleteFeedFollowResult"></div>
+
+    <h1>Get Feed Follows</h1>
+    <form id="getFeedFollowsForm">
+        <label for="getFeedFollowsApiKey">API Key:</label>
+        <input type="text" id="getFeedFollowsApiKey" name="getFeedFollowsApiKey" required>
+        <button type="submit">Get Feed Follows</button>
+    </form>
+    <div id="feedFollowsResult">
+        <textarea id="feedFollowsTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <!-- Javascript -->
+    <script>
+        document.getElementById('createUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const name = document.getElementById('name').value;
+            try {
+                const response = await axios.post('http://localhost:8080/v1/users', { name });
+                const apiKey = response.data.api_key;
+                document.getElementById('apiKeyResult').textContent = `API Key: ${apiKey}`;
+            } catch (error) {
+                console.error(error);
+                alert('Error creating user. Please try again.');
+            }
+        });
+        
+        document.getElementById('createFeedForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('apiKey').value;
+            const feedName = document.getElementById('feedName').value;
+            const feedUrl = document.getElementById('feedUrl').value;
+            try {
+                const response = await axios.post('http://localhost:8080/v1/feeds', { name: feedName, url: feedUrl }, {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    }
+                });
+                document.getElementById('feedsTextArea').value = `Feed:\nId:${response.data.feed.ID}\nCreatedAt:${response.data.feed.UpdatedAt}\nName:${response.data.feed.Name}\nUrl:${response.data.feed.Url}\nUserID:${response.data.feed.UserID}\n\nFeed Follow:\nID:${response.data.feed_follow.ID}\nFeedID:${response.data.feed_follow.FeedID}\nUserID:${response.data.feed_follow.UserID}\nCreatedAt:${response.data.feed_follow.CreatedAt}\nUpdatedAt:${response.data.feed_follow.UpdatedAt}`;
+            } catch (error) {
+                console.error(error);
+                alert('Error creating feed. Please try again.');
+            }
+        });
+
+        document.getElementById('getPostsForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('getPostsApiKey').value;
+            const limit = document.getElementById('limit').value;
+            try {
+                const response = await axios.get('http://localhost:8080/v1/posts', {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    },
+                    params: {
+                        limit: limit || undefined
+                    }
+                });
+                const posts = response.data;
+                let postsText = '';
+                for (const post of posts) {
+                    postsText += `Title: ${post.Title}\nUrl: ${post.Url}\nDescription: ${post.Description}\nPublishedAt: ${post.PublishedAt}\n\n`;
+                }
+                document.getElementById('postsTextArea').value = postsText;
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching posts. Please try again.');
+            }
+        });
+
+        document.getElementById('getUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('getUserApiKey').value;
+            try {
+                const response = await axios.get('http://localhost:8080/v1/users', {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    }
+                });
+                const user = response.data;
+                const userText = `ID: ${user.ID}\nCreatedAt: ${user.CreatedAt}\nUpdatedAt: ${user.UpdatedAt}\nName: ${user.Name}\nApiKey: ${user.ApiKey}`;
+                document.getElementById('userTextArea').value = userText;
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching user. Please try again.');
+            }
+        });
+
+        document.getElementById('createFeedFollowForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('createFeedFollowApiKey').value;
+            const feedID = document.getElementById('feedID').value;
+            try {
+                const response = await axios.post('http://localhost:8080/v1/feed_follows', { feed_id: feedID }, {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    }
+                });
+                const feedFollow = response.data;
+                const feedFollowText = `ID: ${feedFollow.ID}\nFeedID: ${feedFollow.FeedID}\nUserID: ${feedFollow.UserID}\nCreatedAt: ${feedFollow.CreatedAt}\nUpdatedAt: ${feedFollow.UpdatedAt}`;
+                document.getElementById('feedFollowTextArea').value = feedFollowText;
+            } catch (error) {
+                console.error(error);
+                alert('Error creating feed follow. Please try again.');
+            }
+        });
+
+        document.getElementById('deleteFeedFollowForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const feedFollowID = document.getElementById('deleteFeedFollowID').value;
+            try {
+                const response = await axios.delete(`http://localhost:8080/v1/feed_follows/${feedFollowID}`);
+                if (response.status === 200) {
+                    document.getElementById('deleteFeedFollowResult').textContent = 'Done';
+                } else if (response.status >= 400 && response.status < 500) {
+                    document.getElementById('deleteFeedFollowResult').textContent = 'Something went wrong';
+                } else {
+                    throw new Error(`Unexpected response status: ${response.status}`);
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Error deleting feed follow. Please try again.');
+            }
+        });
+
+        document.getElementById('getFeedFollowsForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('getFeedFollowsApiKey').value;
+            try {
+                const response = await axios.get('http://localhost:8080/v1/feed_follows', {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    }
+                });
+                const feedFollows = response.data;
+                let feedFollowsText = '';
+                for (const feedFollow of feedFollows) {
+                    feedFollowsText += `ID: ${feedFollow.ID}\nFeedID: ${feedFollow.FeedID}\nUserID: ${feedFollow.UserID}\nCreatedAt: ${feedFollow.CreatedAt}\nUpdatedAt: ${feedFollow.UpdatedAt}\n\n`;
+                }
+                document.getElementById('feedFollowsTextArea').value = feedFollowsText;
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching feed follows. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html>
