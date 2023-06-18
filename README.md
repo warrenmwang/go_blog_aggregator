@@ -3,7 +3,7 @@
 What is this?
 > An rss blog feed aggregator. Users create accounts. Users authenticate. Users then can create feeds that they want to keep in touch with (give url of blog rss). Then the server will automatically fetch the feeds from the website and parse through the xml received to know what posts the blog has. The User will then be able to retrieve all the posts that they would care about from their blogs. Users choose what blogs to care about through the feed_follows. That is their option to opt-in or opt-out of blog feeds that they would like to follow. The Go Webserver communicates with a PostgresSQL database.
 
-A plain simple front-end is available to use with this backend.
+A plain simple, insecure and only for personal use front-end is available to use with this backend which will be accessible at `localhost:8080` if the server is up.
 
 Notes:
 - haven't tested with JSON feeds

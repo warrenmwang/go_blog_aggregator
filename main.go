@@ -564,6 +564,8 @@ func main() {
 	router.Use(cors.AllowAll().Handler)
 
 	v1Router := chi.NewRouter()
+	router.Mount("/", http.FileServer(http.Dir("./front-end"))) // front-end
+
 	router.Mount("/v1", v1Router)
 
 	v1Router.Get("/readiness", readinessHandler)

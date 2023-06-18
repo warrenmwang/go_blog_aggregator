@@ -28,6 +28,27 @@
     </form>
     <div id="apiKeyResult"></div>
 
+    <h1>Get User</h1>
+    <form id="getUserForm">
+        <label for="getUserApiKey">API Key:</label>
+        <input type="text" id="getUserApiKey" name="getUserApiKey" required>
+        <button type="submit">Get User</button>
+    </form>
+    <div id="userResult">
+        <textarea id="userTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
+    <h1>Save User API Key</h1>
+    <form id="saveApiKeyForm">
+        <label for="apiKeyInput">API Key:</label>
+        <input type="text" id="apiKeyInput" name="apiKeyInput" required> <br>
+        <button type="button" id="saveApiKeyButton">Save API Key</button>
+        <button type="button" id="displayApiKeyButton">Display Saved API Key</button>
+    </form>
+    <div id="savedApiKeyResult">
+        <p id="savedApiKeyText"></p>
+    </div>
+
     <h1>Create Feed</h1>
     <form id="createFeedForm">
         <label for="apiKey">API Key:</label>
@@ -42,6 +63,14 @@
         <textarea id="feedsTextArea" rows="20" cols="50" readonly></textarea>
     </div>
 
+    <h1>Get Feeds</h1>
+    <form id="getFeedsForm">
+        <button type="submit">Get Feeds</button>
+    </form>
+    <div id="feedsResult">
+        <textarea id="getFeedsTextArea" rows="10" cols="50" readonly></textarea>
+    </div>
+
     <h1>Get Posts</h1>
     <form id="getPostsForm">
         <label for="getPostsApiKey">API Key:</label>
@@ -52,16 +81,6 @@
     </form>
     <div id="postsResult">
         <textarea id="postsTextArea" rows="10" cols="50" readonly></textarea>
-    </div>
-
-    <h1>Get User</h1>
-    <form id="getUserForm">
-        <label for="getUserApiKey">API Key:</label>
-        <input type="text" id="getUserApiKey" name="getUserApiKey" required>
-        <button type="submit">Get User</button>
-    </form>
-    <div id="userResult">
-        <textarea id="userTextArea" rows="10" cols="50" readonly></textarea>
     </div>
 
     <h1>Create Feed Follow</h1>
@@ -83,6 +102,11 @@
         <button type="submit">Delete Feed Follow</button>
     </form>
     <div id="deleteFeedFollowResult"></div>
+
+    <!-- the returned feed followes are not very clear, they're just id's and timestamps 
+        not very presentable to the user. need to display the name and description.
+    
+    -->
 
     <h1>Get Feed Follows</h1>
     <form id="getFeedFollowsForm">
@@ -108,6 +132,38 @@
                 alert('Error creating user. Please try again.');
             }
         });
+
+        document.getElementById('getUserForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const apiKey = document.getElementById('getUserApiKey').value;
+            try {
+                const response = await axios.get('http://localhost:8080/v1/users', {
+                    headers: {
+                        'Authorization': `apikey ${apiKey}`
+                    }
+                });
+                const user = response.data;
+                const userText = `ID: ${user.ID}\nCreatedAt: ${user.CreatedAt}\nUpdatedAt: ${user.UpdatedAt}\nName: ${user.Name}\nApiKey: ${user.ApiKey}`;
+                document.getElementById('userTextArea').value = userText;
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching user. Please try again.');
+            }
+        });
+
+        document.getElementById('saveApiKeyButton').addEventListener('click', () => {
+            const apiKey = document.getElementById('apiKeyInput').value;
+            localStorage.setItem('userApiKey', apiKey);
+        });
+
+        document.getElementById('displayApiKeyButton').addEventListener('click', () => {
+            const savedApiKey = localStorage.getItem('userApiKey');
+            if (savedApiKey) {
+                document.getElementById('savedApiKeyText').textContent = `Saved API Key: ${savedApiKey}`;
+            } else {
+                document.getElementById('savedApiKeyText').textContent = 'No API Key saved.';
+            }
+        });
         
         document.getElementById('createFeedForm').addEventListener('submit', async (event) => {
             event.preventDefault();
@@ -124,6 +180,22 @@
             } catch (error) {
                 console.error(error);
                 alert('Error creating feed. Please try again.');
+            }
+        });
+
+        document.getElementById('getFeedsForm').addEventListener('submit', async (event) => {
+            event.preventDefault();
+            try {
+                const response = await axios.get('http://localhost:8080/v1/feeds');
+                const feeds = response.data;
+                let feedsText = '';
+                for (const feed of feeds) {
+                    feedsText += `ID: ${feed.ID}\nCreatedAt: ${feed.CreatedAt}\nUpdatedAt: ${feed.UpdatedAt}\nName: ${feed.Name}\nUrl: ${feed.Url}\nUserID: ${feed.UserID}\n\n`;
+                }
+                document.getElementById('getFeedsTextArea').value = feedsText;
+            } catch (error) {
+                console.error(error);
+                alert('Error fetching feeds. Please try again.');
             }
         });
 
@@ -149,24 +221,6 @@
             } catch (error) {
                 console.error(error);
                 alert('Error fetching posts. Please try again.');
-            }
-        });
-
-        document.getElementById('getUserForm').addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const apiKey = document.getElementById('getUserApiKey').value;
-            try {
-                const response = await axios.get('http://localhost:8080/v1/users', {
-                    headers: {
-                        'Authorization': `apikey ${apiKey}`
-                    }
-                });
-                const user = response.data;
-                const userText = `ID: ${user.ID}\nCreatedAt: ${user.CreatedAt}\nUpdatedAt: ${user.UpdatedAt}\nName: ${user.Name}\nApiKey: ${user.ApiKey}`;
-                document.getElementById('userTextArea').value = userText;
-            } catch (error) {
-                console.error(error);
-                alert('Error fetching user. Please try again.');
             }
         });
 
