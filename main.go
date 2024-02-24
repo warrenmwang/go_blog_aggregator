@@ -545,7 +545,7 @@ func main() {
 	// environment stuff
 	godotenv.Load() // load .env
 	port := os.Getenv("PORT")
-	dbURL := os.Getenv("DBURL")
+	dbURL := os.Getenv("DATABASE_URL")
 
 	// connect to db
 	db, err := sql.Open("postgres", dbURL)

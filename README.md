@@ -1,6 +1,6 @@
 # RSS/Atom blog feed aggregator
 
-What is this?
+## What is this?
 > An rss blog feed aggregator. Users create accounts. Users authenticate. Users then can create feeds that they want to keep in touch with (give url of blog rss). Then the server will automatically fetch the feeds from the website and parse through the xml received to know what posts the blog has. The User will then be able to retrieve all the posts that they would care about from their blogs. Users choose what blogs to care about through the feed_follows. That is their option to opt-in or opt-out of blog feeds that they would like to follow. The Go Webserver communicates with a PostgresSQL database.
 
 A plain simple, insecure and only for personal use front-end is available to use with this backend which will be accessible at `localhost:8080` if the server is up.
@@ -9,9 +9,16 @@ Notes:
 - haven't tested with JSON feeds
 - won't work with blogs that don't have a standard, static .xml file (looking at you websites that have a dynamically generate xml file that isn't properly named with the extension `.xml`)
 
-# Endpoints
+## Quickstart
+Setup is wrapped up in a `docker-compose.yml` file. To start the app, run the `run.sh` bash script. 
+User data is stored in the PostgreSQL database in the volume for the PostgreSQL container. 
+To stop the go app container, the PostgreSQL container, and delete the volume (delete all user info), run `docker compose down -v`.
 
-## `POST /v1/users` - create user
+
+## Endpoints
+Below is my documentation of what are the available endpoints that the go RESTful API backend service has that the small front end uses.
+
+### `POST /v1/users` - create user
 request
 ```json
 {
@@ -29,7 +36,7 @@ reply
 }
 ```
 
-## `GET /v1/users/` - get a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+### `GET /v1/users/` - get a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 response
 ```json
 {
@@ -41,7 +48,7 @@ response
 }
 ```
 
-## `POST /v1/feeds` - create a feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+### `POST /v1/feeds` - create a feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 request
 ```json
 {
@@ -73,7 +80,7 @@ Important distinction:
 - if url is unique, both the `feed` and `feed_follow` will be created, response code is `201` and you should see both the struct values be correct
 - if url already exists in the db, either from one of the current user's previous feeds or in another user's feed, response code is `200` and the `feed` struct will be zero values while the `feed_follow` struct is what was the only thing created
 
-## `GET /v1/feeds` - get all feeds
+### `GET /v1/feeds` - get all feeds
 response
 ```json
 [
@@ -96,7 +103,7 @@ response
 ]
 ```
 
-## `POST /v1/feed_follows` - create a feed_follow to a specific feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+### `POST /v1/feed_follows` - create a feed_follow to a specific feed, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 request
 ```json
 {
@@ -114,11 +121,11 @@ response
   }
 ```
 
-## `DELETE /v1/feed_follows/{feedFollowID}` - delete a feed_follow by its id
+### `DELETE /v1/feed_follows/{feedFollowID}` - delete a feed_follow by its id
 - without a given ID, will return 405, or if left trailing `/` 404
 - with a valid feed_follow ID returns 200 and `null` body
 
-## `GET /v1/feed_follows` - gets all the feed_follows of a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+### `GET /v1/feed_follows` - gets all the feed_follows of a user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 
 ```json
 [
@@ -132,18 +139,16 @@ response
 ]
 ```
 
-## `GET /v1/posts` - get all the posts for user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
+### `GET /v1/posts` - get all the posts for user, need to have user apikey in Authorization header like `Authorization: apikey <key>`
 Returns a list of all the posts from blogs whose feeds this user follows. If the user doesn't follow any feed, the response will be `null`.
 - Accepts an optional query parameter `limit` that modifies how many blog posts to return. The posts returned are ordered descending by their publication date, so you will see all the newest posts at the top.
- 
+
+### `GET /v1/readiness` - readiness endpoint, returns 200 if server on
+
+### `GET /v1/err` - return error code 500 if server on
 
 
-## `GET /v1/readiness` - readiness endpoint, returns 200 if server on
-
-## `GET /v1/err` - return error code 500 if server on
-
-
-# Further Notes
+## Further Notes
 
 What are the constructs? 
 
@@ -189,3 +194,5 @@ type Post struct {
 
 When does the server fetch feeds?
 > Periodically with an arbitrary time delay. The number of feeds to be fetched can be updated. It knows what feeds to fetch by checking the feeds in the feeds table and checks their "last_updated" column. If it is null or if it is older than 1 hour from the current time, it will be retrieved again.
+
+### Project Created Following the Guide on [Boot.dev](https://www.boot.dev/assignments/90609135-23e0-472e-aded-da7ac2d22cdc)

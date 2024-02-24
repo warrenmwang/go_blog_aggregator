@@ -1,6 +1,4 @@
 .env
-run.sh
 thunder-tests/
-migration.sh
 out
 tmp.txt
