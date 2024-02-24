@@ -17,6 +17,7 @@ services:
       - postgres
     environment:
       DATABASE_URL: postgres://postgres:mysecretpassword@postgres:5432/mynewdatabase?sslmode=disable
+      PORT: 8080
     ports:
       - "8080:8080"
     command: >
